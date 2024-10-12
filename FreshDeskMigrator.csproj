@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>fef467ff-dcb8-449b-88fb-a678ea55690f</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="FreshdeskArticlesUpdate\**" />
+    <EmbeddedResource Remove="FreshdeskArticlesUpdate\**" />
+    <None Remove="FreshdeskArticlesUpdate\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="SampleHtmlToClean.htm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.67" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="6.0.1" />
+    <PackageReference Include="Polly" Version="8.4.2" />
+  </ItemGroup>
+
+</Project>
