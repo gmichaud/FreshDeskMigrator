@@ -1,17 +1,12 @@
 ﻿using HtmlAgilityPack;
+using Microsoft.Extensions.Configuration;
 using Polly;
 using Polly.Retry;
-using System;
-using System.Drawing;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using static System.Net.Mime.MediaTypeNames;
 using System.Text.RegularExpressions;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using Microsoft.Extensions.Configuration;
 
 namespace FreshDeskMigrator
 {
@@ -32,7 +27,7 @@ namespace FreshDeskMigrator
         private const string RootId = "24739848";
 
         private const string Url = "https://velixo.atlassian.net";
-        
+
         private static HttpClient _client = new();
         private static ResiliencePipeline<HttpResponseMessage> _resiliencePipeline = null;
 
@@ -71,20 +66,19 @@ namespace FreshDeskMigrator
                 .AddRetry(pipelineOptions) // add retry logic with custom options
                 .Build(); // build the resilience pipeline
 
-            LoadArticles();
+            //LoadArticles();
 
             //await CreatePageStructure();
             //System.IO.File.WriteAllText("categories.json", JsonSerializer.Serialize(_categoriesMap.Values));
             //System.IO.File.WriteAllText("folders.json", JsonSerializer.Serialize(_foldersMap.Values));
 
-            //await MigrateArticleStructure();
+            //await MigrateArticle();
             //System.IO.File.WriteAllText("articles.json", JsonSerializer.Serialize(_articlesMap.Values));
 
             _articlesMap = JsonSerializer.Deserialize<ConfluenceMap[]>(System.IO.File.ReadAllText("articles.json")).ToDictionary(x => x.Id);
             _categoriesMap = JsonSerializer.Deserialize<ConfluenceMap[]>(System.IO.File.ReadAllText("categories.json")).ToDictionary(x => x.Id);
             _foldersMap = JsonSerializer.Deserialize<ConfluenceMap[]>(System.IO.File.ReadAllText("folders.json")).ToDictionary(x => x.Id);
-
-            await AdjustAndUpdateArticleContent();       
+            await AdjustAndUpdateArticleContent();
         }
 
         private static void LoadArticles()
@@ -146,12 +140,12 @@ namespace FreshDeskMigrator
                     Status = "current"
                 }, string.Empty);
 
-                _categoriesMap.Add(category.Id, new ConfluenceMap() { Id = category.Id, ConfluenceId = categoryArticle.ID, ConfluenceTitle = categoryArticle.Title });
+                _categoriesMap.Add(category.Id, new ConfluenceMap() { Id = category.Id, ConfluenceArticle = categoryArticle });
                 category.ConfluenceId = categoryArticle.ID;
 
                 await AddLabels(category.ConfluenceId, category.Labels);
 
-                foreach(var folder in category.Folders.Values)
+                foreach (var folder in category.Folders.Values)
                 {
                     Console.WriteLine("Folder: " + folder.Id + " " + folder.Name);
                     var folderArticle = await CreateArticle(new ConfluenceArticle()
@@ -162,17 +156,17 @@ namespace FreshDeskMigrator
                         Status = "current"
                     }, folder.Parent != null ? folder.Parent.Name : category.Name);
 
-                    _foldersMap.Add(folder.Id, new ConfluenceMap() { Id = folder.Id, ConfluenceId = folderArticle.ID, ConfluenceTitle = folderArticle.Title });
+                    _foldersMap.Add(folder.Id, new ConfluenceMap() { Id = folder.Id, ConfluenceArticle = categoryArticle });
                     folder.ConfluenceId = folderArticle.ID;
                     await AddLabels(folder.ConfluenceId, category.Labels);
                 }
             }
         }
 
-        private static async Task MigrateArticleStructure()
+        private static async Task MigrateArticle()
         {
             int i = 0;
-            foreach(var article in _freshDeskArticles.Values)
+            foreach (var article in _freshDeskArticles.Values)
             {
                 i++;
                 Console.WriteLine("(" + i + "/" + _freshDeskArticles.Count + ") " + article.Id + ": " + article.Title);
@@ -194,28 +188,6 @@ namespace FreshDeskMigrator
                     ParentID = folder.ConfluenceId,
                     Title = article.Title,
                     Status = "current",
-                }, folder.Name);
-
-                _articlesMap.Add(article.Id, new ConfluenceMap() { Id = article.Id, ConfluenceId = confluenceArticle.ID, ConfluenceTitle = confluenceArticle.Title });                
-                await AddLabels(confluenceArticle.ID, category.Labels);
-            }
-        }
-
-        private static async Task AdjustAndUpdateArticleContent()
-        {
-            int i = 0;
-            foreach (var article in _freshDeskArticles.Values)
-            {
-                i++;
-                Console.WriteLine("(" + i + "/" + _freshDeskArticles.Count + ") " + article.Id + ": " + article.Title);
-
-                string content = CleanHtml(article.Description);
-
-                var confluenceArticle = new ConfluenceArticle()
-                {
-                    ID = _articlesMap[article.Id].ConfluenceId,
-                    Title = _articlesMap[article.Id].ConfluenceTitle,
-                    Status = "current",
                     Body = new Body()
                     {
                         Storage = new Storage()
@@ -223,15 +195,28 @@ namespace FreshDeskMigrator
                             Representation = "storage",
                             Value = CleanHtml(article.Description)
                         }
-                    },
-                    Version = new Version()
-                    {
-                        Number = 2,
-                        Message = "Initial version"
                     }
-                };
+                }, folder.Name);
 
-                //await UpdateArticle(confluenceArticle);
+                _articlesMap.Add(article.Id, new ConfluenceMap() { Id = article.Id, ConfluenceArticle = confluenceArticle });
+                await AddLabels(confluenceArticle.ID, category.Labels);
+            }
+        }
+
+        private static async Task AdjustAndUpdateArticleContent()
+        {
+            int i = 0;
+            foreach (var article in _articlesMap.Values)
+            {
+                i++;
+                Console.WriteLine("(" + i + "/" + _articlesMap.Count + ") " + article.Id + ": " + article.ConfluenceArticle.Title);
+
+                ConfluenceArticle currentArticle = await GetArticle(article.ConfluenceArticle.ID);
+                currentArticle.Body.Storage.Value = FixHelpDeskLinksAndDoFinalCleanup(article.ConfluenceArticle.Body.Storage.Value);
+                currentArticle.Version.Number++;
+                currentArticle.Version.Message = "Updated links";
+
+                var afterUpdate = await UpdateArticle(currentArticle);
             }
         }
 
@@ -243,10 +228,27 @@ namespace FreshDeskMigrator
             */
         }
 
+        private static async Task<ConfluenceArticle> GetArticle(string id)
+        {
+            // Make the POST request
+            HttpResponseMessage response = await _resiliencePipeline.ExecuteAsync(async token => await _client.GetAsync(Url + $"/wiki/api/v2/pages/{id}?body-format=storage"));
+            string responseBody = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                return JsonSerializer.Deserialize<ConfluenceArticle>(responseBody);
+            }
+            else
+            {
+                Console.WriteLine(responseBody);
+                throw new Exception();
+            }
+        }
+
         private static async Task<ConfluenceArticle> CreateArticle(ConfluenceArticle article, string parentFolderName)
         {
             //Deduplicate titles
-            if(_titles.Contains(article.Title.ToLower()))
+            if (_titles.Contains(article.Title.ToLower()))
             {
                 Console.WriteLine("Title is duplicate! " + article.Title);
 
@@ -357,11 +359,9 @@ namespace FreshDeskMigrator
             FixAnchors(doc);
             FixAnchorRefs(doc);
             FixCdnImageLinks(doc);
-            FixHelpDeskLinks(doc);
 
             return doc.DocumentNode.OuterHtml;
         }
-
         private static void RemoveAttribute(HtmlDocument doc, string attribute)
         {
             var nodes = doc.DocumentNode.SelectNodes(".//*[@" + attribute + "]");
@@ -401,7 +401,7 @@ namespace FreshDeskMigrator
                 foreach (HtmlNode node in nodes)
                 {
                     string anchor = node.Attributes["href"].Value;
-                    if(anchor.StartsWith("#"))
+                    if (anchor.StartsWith("#"))
                     {
                         node.Attributes["href"].Value = CleanAnchor(node.Attributes["href"].Value);
                     }
@@ -424,7 +424,7 @@ namespace FreshDeskMigrator
                 {
                     string url = node.Attributes["src"].Value;
 
-                    if(url.Contains("https://s3.amazonaws.com/cdn.freshdesk.com"))
+                    if (url.Contains("https://s3.amazonaws.com/cdn.freshdesk.com"))
                     {
                         var uri = new Uri(url);
                         node.Attributes["src"].Value = "https://s3.ca-central-1.amazonaws.com/cdn.velixo.com/helpdesk/" + System.IO.Path.GetFileName(uri.AbsolutePath);
@@ -433,11 +433,15 @@ namespace FreshDeskMigrator
             }
         }
 
-        private static void FixHelpDeskLinks(HtmlDocument doc)
+        private static string FixHelpDeskLinksAndDoFinalCleanup(string content)
         {
+            string cleaned = content.Replace("&amp;nbsp;", " ").Replace("&nbsp;", " ");
+
+            var doc = new HtmlDocument();
+            doc.LoadHtml(cleaned);
+
             Regex numberRegEx = new Regex(@"[\d]+");
 
-            //<ac:link><ri:page ri:content-title=\"Article with ' &quot; hhhh\" ri:version-at-save=\"1\" /><ac:link-body>test</ac:link-body></ac:link>
             var nodes = doc.DocumentNode.SelectNodes(".//*[@href]");
             if (nodes != null)
             {
@@ -455,7 +459,7 @@ namespace FreshDeskMigrator
                         var matchCollection = numberRegEx.Matches(url);
                         if (_articlesMap.TryGetValue(long.Parse(matchCollection[0].Value), out var confluenceMap))
                         {
-
+                            ReplaceAhrefWithConfluenceLink(node, confluenceMap.ConfluenceArticle.Title);
                         }
                         else
                         {
@@ -468,7 +472,7 @@ namespace FreshDeskMigrator
                         var matchCollection = numberRegEx.Matches(url);
                         if (_foldersMap.TryGetValue(long.Parse(matchCollection[0].Value), out var confluenceMap))
                         {
-
+                            ReplaceAhrefWithConfluenceLink(node, confluenceMap.ConfluenceArticle.Title);
                         }
                         else
                         {
@@ -477,11 +481,10 @@ namespace FreshDeskMigrator
                     }
                     else if (url.Contains("/support/solutions"))
                     {
-                        Console.WriteLine("Category: " + url);
                         var matchCollection = numberRegEx.Matches(url);
                         if (_categoriesMap.TryGetValue(long.Parse(matchCollection[0].Value), out var confluenceMap))
                         {
-
+                            ReplaceAhrefWithConfluenceLink(node, confluenceMap.ConfluenceArticle.Title);
                         }
                         else
                         {
@@ -494,6 +497,15 @@ namespace FreshDeskMigrator
                     }
                 }
             }
+
+            string output = doc.DocumentNode.OuterHtml;
+            return output;
+        }
+
+        private static void ReplaceAhrefWithConfluenceLink(HtmlNode node, string pageTitle)
+        {
+            var newNode = HtmlNode.CreateNode($"<ac:link><ri:page ri:content-title=\"{System.Net.WebUtility.HtmlEncode(pageTitle)}\"/><ac:link-body>{node.InnerText}</ac:link-body></ac:link>");
+            node.ParentNode.ReplaceChild(newNode, node);
         }
     }
 }

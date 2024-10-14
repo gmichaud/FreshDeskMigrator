@@ -41,17 +41,19 @@ class Program
 
     static HashSet<string> processedFolders = new HashSet<string>();
 
-    ConfigurationBuilder configurationBuilder = new ConfigurationBuilder();
-    IConfiguration configuration = configurationBuilder.AddUserSecrets<Program>().Build();
-    var secrets = configuration.GetSection("FreshDesk");
-
-    static RestClient client = new RestClient(new RestClientOptions("https://velixo.freshdesk.com")
-    {
-        Authenticator = new HttpBasicAuthenticator(secrets["Token"], "X")
-    });
+    static RestClient client;
 
     static async Task Main(string[] args)
     {
+        ConfigurationBuilder configurationBuilder = new ConfigurationBuilder();
+        IConfiguration configuration = configurationBuilder.AddUserSecrets<Program>().Build();
+        var secrets = configuration.GetSection("FreshDesk");
+
+        client = new RestClient(new RestClientOptions("https://velixo.freshdesk.com")
+        {
+            Authenticator = new HttpBasicAuthenticator(secrets["Token"], "X")
+        });
+
         // Load articles
         foreach (var category in categoriesArticles.Keys)
         {
@@ -78,75 +80,75 @@ class Program
                 if (processedArticles.Contains(article.Key)) continue;
 
                 Console.WriteLine($"Processing article https://help.velixo.com/support/solutions/articles/{article.Key}");
-                //System.IO.File.WriteAllText(article.Key + ".json", article.Value.ToString());
+                System.IO.File.WriteAllText(article.Key + ".json", article.Value.ToString());
 
-                if(article.Value.TryGetProperty("description", out var articleDescription))
-                {
-                    bool foundOne = false;
-                    MatchCollection matches = imgRegExp.Matches(articleDescription.ToString());
-                    foreach(Match match in matches)
-                    {
-                        try
-                        {
-                            var fullPath = match.Value.Substring(5, match.Value.Length - 6);
-                            var uri = new System.Uri(fullPath);
-                            wc.DownloadFile(fullPath, System.IO.Path.GetFileName(uri.LocalPath));
-                        }
-                        catch(Exception ex)
-                        {
-                            Console.WriteLine(ex.ToString());
-                        }
+                //if(article.Value.TryGetProperty("description", out var articleDescription))
+                //{
+                //    bool foundOne = false;
+                //    MatchCollection matches = imgRegExp.Matches(articleDescription.ToString());
+                //    foreach(Match match in matches)
+                //    {
+                //        try
+                //        {
+                //            var fullPath = match.Value.Substring(5, match.Value.Length - 6);
+                //            var uri = new System.Uri(fullPath);
+                //            wc.DownloadFile(fullPath, System.IO.Path.GetFileName(uri.LocalPath));
+                //        }
+                //        catch(Exception ex)
+                //        {
+                //            Console.WriteLine(ex.ToString());
+                //        }
 
-                        foundOne = true;
-                    }
+                //        foundOne = true;
+                //    }
 
-                    if(articleDescription.ToString().Contains("img src") && !foundOne)
-                    {
-                        System.Diagnostics.Debug.Assert(false);
-                    }
-                }
+                //    if(articleDescription.ToString().Contains("img src") && !foundOne)
+                //    {
+                //        System.Diagnostics.Debug.Assert(false);
+                //    }
+                //}
 
-                /*string originalDescription = article.Value.GetProperty("description").ToString();
-                var updatedDescription = originalDescription.Replace("MYOB Advanced", "MYOB Acumatica");
-                updatedDescription = updatedDescription.Replace("formerly MYOB Acumatica", "formerly MYOB Advanced");
+                //string originalDescription = article.Value.GetProperty("description").ToString();
+                //var updatedDescription = originalDescription.Replace("MYOB Advanced", "MYOB Acumatica");
+                //updatedDescription = updatedDescription.Replace("formerly MYOB Acumatica", "formerly MYOB Advanced");
 
-                if (originalDescription != updatedDescription)
-                {
-                    var updateArticleDescriptionRequest = new RestRequest($"/api/v2/solutions/articles/{article.Key}", Method.Put);
-                    updateArticleDescriptionRequest.RequestFormat = DataFormat.Json;
-                    updateArticleDescriptionRequest.AddJsonBody(new { description = updatedDescription, status = 2 });
-                    RestResponse updateArticleDescriptionResponse = await client.ExecuteAsync(updateArticleDescriptionRequest);
-                    if (updateArticleDescriptionResponse.IsSuccessful)
-                    {
-                        Console.WriteLine("SUCCESS! Updated article body " + article.Key);
-                    }
-                    else
-                    {
-                        Debug.Assert(false);
-                        Console.WriteLine("ERROR! Failed to update article body " + article.Key);
-                    }
-                }
+                //if (originalDescription != updatedDescription)
+                //{
+                //    var updateArticleDescriptionRequest = new RestRequest($"/api/v2/solutions/articles/{article.Key}", Method.Put);
+                //    updateArticleDescriptionRequest.RequestFormat = DataFormat.Json;
+                //    updateArticleDescriptionRequest.AddJsonBody(new { description = updatedDescription, status = 2 });
+                //    RestResponse updateArticleDescriptionResponse = await client.ExecuteAsync(updateArticleDescriptionRequest);
+                //    if (updateArticleDescriptionResponse.IsSuccessful)
+                //    {
+                //        Console.WriteLine("SUCCESS! Updated article body " + article.Key);
+                //    }
+                //    else
+                //    {
+                //        Debug.Assert(false);
+                //        Console.WriteLine("ERROR! Failed to update article body " + article.Key);
+                //    }
+                //}
 
-                string originalTitle = article.Value.GetProperty("title").ToString();
-                var updatedTitle = originalTitle.Replace("MYOB Advanced", "MYOB Acumatica");
-                updatedTitle = updatedTitle.Replace("formerly MYOB Acumatica", "formerly MYOB Advanced");
+                //string originalTitle = article.Value.GetProperty("title").ToString();
+                //var updatedTitle = originalTitle.Replace("MYOB Advanced", "MYOB Acumatica");
+                //updatedTitle = updatedTitle.Replace("formerly MYOB Acumatica", "formerly MYOB Advanced");
 
-                if (originalTitle != updatedTitle)
-                {
-                    var updateArticleTitleRequest = new RestRequest($"/api/v2/solutions/articles/{article.Key}", Method.Put);
-                    updateArticleTitleRequest.RequestFormat = DataFormat.Json;
-                    updateArticleTitleRequest.AddJsonBody(new { title = updatedTitle, status = 2 });
-                    RestResponse updateArticleTitleResponse = await client.ExecuteAsync(updateArticleTitleRequest);
-                    if (updateArticleTitleResponse.IsSuccessful)
-                    {
-                        Console.WriteLine("SUCCESS! Updated article title " + article.Key);
-                    }
-                    else
-                    {
-                        Debug.Assert(false);
-                        Console.WriteLine("ERROR! Failed to update article title " + article.Key);
-                    }
-                }*/
+                //if (originalTitle != updatedTitle)
+                //{
+                //    var updateArticleTitleRequest = new RestRequest($"/api/v2/solutions/articles/{article.Key}", Method.Put);
+                //    updateArticleTitleRequest.RequestFormat = DataFormat.Json;
+                //    updateArticleTitleRequest.AddJsonBody(new { title = updatedTitle, status = 2 });
+                //    RestResponse updateArticleTitleResponse = await client.ExecuteAsync(updateArticleTitleRequest);
+                //    if (updateArticleTitleResponse.IsSuccessful)
+                //    {
+                //        Console.WriteLine("SUCCESS! Updated article title " + article.Key);
+                //    }
+                //    else
+                //    {
+                //        Debug.Assert(false);
+                //        Console.WriteLine("ERROR! Failed to update article title " + article.Key);
+                //    }
+                //}
 
                 processedArticles.Add(article.Key);
             }

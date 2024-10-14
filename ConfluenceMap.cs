@@ -9,7 +9,6 @@ namespace FreshDeskMigrator
     internal class ConfluenceMap
     {
         public long Id { get; set; }
-        public string ConfluenceId { get; set; }
-        public string ConfluenceTitle { get; set; }
+        public ConfluenceArticle ConfluenceArticle { get; set; }
     }
 }
